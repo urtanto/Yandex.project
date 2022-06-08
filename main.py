@@ -11,6 +11,12 @@ db_session.global_init("db/shopunits.sqlite")
 
 
 def recursion_add(id):
+    """
+    Вспомогательная функция для метода "/nodes/<string:id>", она рекурсивно
+    возвращает элементы
+    :param id: uuid элемента
+    :return: dict
+    """
     session = db_session.create_session()
     root = session.query(ShopUnit).filter(ShopUnit.id == id).first()
     ans = {"id": id,
@@ -30,6 +36,11 @@ def recursion_add(id):
 
 
 def recursion_del(id):
+    """
+    Вспомогательная функция для удаления вложенных элементов(например товары
+    в категории)
+    :param id: uuid элемента
+    """
     session = db_session.create_session()
     to_delete = session.query(ShopUnit).filter(ShopUnit.id == id).first()
     if to_delete.children:
@@ -44,10 +55,22 @@ def recursion_del(id):
 
 
 def seconds_time(date):
+    """
+    Функция для улучшения читаемости и уменьшения кода
+    :param date: class timedelta
+    :return:
+    """
     return date.days * 24 * 60 * 60 + date.seconds
 
 
 def update_time(item, date):
+    """
+    Рекурсивная функция, которая вызывается при добавлении/изменении нового
+    товара/категории. Она обновляет всем родителям время и сумму если это
+    возможно.
+    :param item: class ShopUnit
+    :param date: дата для обновления
+    """
     session = db_session.create_session()
     parent = session.query(ShopUnit).filter(ShopUnit.id == item.parentId).first()
     parent.date = date
@@ -69,6 +92,11 @@ def update_time(item, date):
 
 
 def all_categories(item):
+    """
+    Рекурсивная функция, которая возвращает всех родителей элемента
+    :param item: class ShopUnit
+    :return: list
+    """
     if item.parentId:
         session = db_session.create_session()
         parent = session.query(ShopUnit).filter(ShopUnit.id == item.parentId).first()
@@ -78,6 +106,11 @@ def all_categories(item):
 
 
 def recursion_update(item):
+    """
+    Рекурсивная функция, которая пересчитывает цену для родителя после удаления
+    элементов и сохраняет историю.
+    :param item: class ShopUnit
+    """
     session = db_session.create_session()
     full_cost, count = 0, 0
     for child_id in item.children.split(";"):
@@ -104,13 +137,20 @@ def recursion_update(item):
     session.close()
 
 
+# он не нужен по факту
 @app.route('/', methods=['GET', 'POST'])
 def run():
-    return 0
+    return 0, 404
 
 
 @app.route('/imports', methods=['GET', 'POST'])
 def imports():
+    """
+    Добавление/изменение товаров/категорий. Принимает на вход json с items и
+    updateDate
+    param items: dict
+    param updateDate: str
+    """
     session = db_session.create_session()
     updateDate = request.json.get("updateDate")
     items = request.json.get("items")
@@ -159,7 +199,8 @@ def imports():
             history_unit.date = shopUnit.date
             history_unit.parentId = shopUnit.parentId
             history_unit.price = shopUnit.price
-            shopUnit.history_id = ";".join(shopUnit.history_id.split(";") + [str(session.query(HistoryUnit).all()[-1].id + 1)])
+            shopUnit.history_id = ";".join(
+                shopUnit.history_id.split(";") + [str(session.query(HistoryUnit).all()[-1].id + 1)])
             session.add(history_unit)
         session.commit()
         if shopUnit.parentId is not None:
@@ -175,7 +216,8 @@ def imports():
         history_unit.date = category.date
         history_unit.parentId = category.parentId
         history_unit.price = category.price
-        category.history_id = ";".join(category.history_id.split(";") + [str(session.query(HistoryUnit).all()[-1].id + 1)])
+        category.history_id = ";".join(
+            category.history_id.split(";") + [str(session.query(HistoryUnit).all()[-1].id + 1)])
         session.add(history_unit)
         session.commit()
     session.commit()
@@ -185,6 +227,11 @@ def imports():
 
 @app.route('/nodes/<string:id>', methods=['GET', 'POST'])
 def nodes(id):
+    """
+    Метод для получения информации об элементе по идентификатору
+    :param id: uuid элемента
+    :return: dict
+    """
     reg_ans = re.match(r"\w{8}-\w{4}-\w{4}-\w{4}-\w{12}", id)
     if reg_ans is None:
         return "Validation Failed", 400
@@ -210,6 +257,11 @@ def nodes(id):
 
 @app.route('/sales', methods=['GET', 'POST'])
 def sales():
+    """
+    Получение скидок за последние 24 часа от введенной даты
+    param date: str
+    :return: list
+    """
     date = request.args.get("date", default="228", type=str)
     reg_ans = re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", date)
     reg_ans1 = re.match(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d*Z", date)
@@ -235,6 +287,11 @@ def sales():
 
 @app.route('/node/<string:id>/statistic', methods=['GET', 'POST'])
 def node(id):
+    """
+    Получение статистики по элементу в промежутке времени
+    :param id: uuid элемента
+    :return: list
+    """
     date_start = request.args.get("dateStart", default="228", type=str)
     date_end = request.args.get("dateEnd", default="228", type=str)
     reg_ans_id = re.match(r"\w{8}-\w{4}-\w{4}-\w{4}-\w{12}", id)
@@ -275,6 +332,10 @@ def node(id):
 
 @app.route('/delete/<string:id>', methods=['GET', 'POST', 'DELETE'])
 def delete(id):
+    """
+    Удаление элемента и всех его дочерних элементов с изменением цены родителей.
+    :param id: uuid элемента
+    """
     reg_ans = re.match(r"\w{8}-\w{4}-\w{4}-\w{4}-\w{12}", id)
     if reg_ans is None:
         return "Validation Failed", 400
@@ -302,12 +363,14 @@ def delete(id):
 
 
 def main():
+    """
+    Стартовая функция, запускает сервер на хосте 0.0.0.0 и порту 8000
+    """
     # app.run(port=int(os.environ.get("PORT")), host='0.0.0.0')
     app.run(port=8000, host="0.0.0.0")
     # app.run()
 
 
 if __name__ == '__main__':
-    # task = threading.Thread(target=main)
-    # task.start()
+    # запуск бекенда
     main()

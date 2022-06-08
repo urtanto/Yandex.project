@@ -303,8 +303,8 @@ def delete(id):
 
 def main():
     # app.run(port=int(os.environ.get("PORT")), host='0.0.0.0')
-    # app.run(port=8080, host="0.0.0.0")
-    app.run()
+    app.run(port=8000, host="0.0.0.0")
+    # app.run()
 
 
 if __name__ == '__main__':
